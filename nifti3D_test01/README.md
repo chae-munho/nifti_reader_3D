@@ -61,3 +61,10 @@ Acknowledgments
 NIFTI-Reader-JS makes use of the following third-party libraries:
 - [pako](https://github.com/nodeca/pako) &mdash; for GZIP inflating
 
+# 3D_test02.html result
+![3D_1](https://github.com/user-attachments/assets/dfda3703-6af9-40b7-acdf-9d20b85e4b27)
+
+```
+npm install mime-types
+```
+
