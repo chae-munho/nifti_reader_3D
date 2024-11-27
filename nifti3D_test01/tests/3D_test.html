@@ -1,0 +1,220 @@
+<!--nifti file reader-->
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <link rel="shortcut icon" href="#">
+
+    <script type="module">
+        import * as nifti from './nifti-reader.js';
+
+        // Check if the nifti module is loaded
+        if (typeof nifti !== "undefined" && nifti !== null) {
+            console.log("nifti-reader.js is loaded correctly.");
+            alert("nifti 모듈이 로드되었습니다.");
+        } else {
+            console.error("nifti-reader.js failed to load.");
+            alert("nifti 모듈 로드 실패.");
+        }
+    </script>
+
+    <script type="text/javascript">
+        let currentView = "axial"; // Default view
+
+        function readNIFTI(name, data) {
+            const canvas = document.getElementById('myCanvas');
+            const slider = document.getElementById('myRange');
+            let niftiHeader, niftiImage;
+
+            if (nifti.isCompressed(data)) {
+                data = nifti.decompress(data);
+            }
+
+            if (nifti.isNIFTI(data)) {
+                niftiHeader = nifti.readHeader(data);
+                niftiImage = nifti.readImage(niftiHeader, data);
+
+                // Save to global variables for later access
+                window.currentHeader = niftiHeader;
+                window.currentImage = niftiImage;
+            }
+
+            const headerDisplay = document.getElementById('headerInfo');
+            headerDisplay.innerText = niftiHeader.toFormattedString();
+
+            updateSliderRange(niftiHeader, slider);
+
+            slider.oninput = function () {
+                drawCanvas(canvas, parseInt(slider.value), niftiHeader, niftiImage, currentView);
+            };
+
+            drawCanvas(canvas, Math.round(slider.max / 2), niftiHeader, niftiImage, currentView);
+        }
+
+        function updateSliderRange(niftiHeader, slider) {
+            if (!niftiHeader || !niftiHeader.dims) {
+                console.error("Invalid NIFTI header or dimensions missing.");
+                return;
+            }
+
+            const slices = {
+                axial: niftiHeader.dims[3],
+                sagittal: niftiHeader.dims[1],
+                coronal: niftiHeader.dims[2],
+            };
+
+            slider.max = slices[currentView] - 1;
+            slider.value = Math.round(slider.max / 2);
+        }
+
+        function drawCanvas(canvas, slice, niftiHeader, niftiImage, view) {
+            const dims = niftiHeader.dims;
+            let cols, rows, sliceOffset, sliceSize;
+            const ctx = canvas.getContext("2d");
+
+            if (view === "axial") {
+                cols = dims[1];
+                rows = dims[2];
+                sliceSize = cols * rows;
+                sliceOffset = sliceSize * slice;
+            } else if (view === "coronal") {
+                cols = dims[1];
+                rows = dims[3];
+                sliceSize = cols * dims[2];
+                sliceOffset = slice * cols;
+            } else if (view === "sagittal") {
+                cols = dims[2];
+                rows = dims[3];
+                sliceSize = dims[1] * cols;
+                sliceOffset = slice;
+            }
+
+            canvas.width = cols;
+            canvas.height = rows;
+            const canvasImageData = ctx.createImageData(canvas.width, canvas.height);
+
+            let typedData;
+            if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_UINT8) {
+                typedData = new Uint8Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_INT16) {
+                typedData = new Int16Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_INT32) {
+                typedData = new Int32Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_FLOAT32) {
+                typedData = new Float32Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_FLOAT64) {
+                typedData = new Float64Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_INT8) {
+                typedData = new Int8Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_UINT16) {
+                typedData = new Uint16Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_UINT32) {
+                typedData = new Uint32Array(niftiImage);
+            } else {
+                return;
+            }
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    let offset;
+                    if (view === "axial") {
+                        offset = sliceOffset + row * cols + col;
+                    } else if (view === "coronal") {
+                        offset = slice * cols + row * sliceSize + col;
+                    } else if (view === "sagittal") {
+                        offset = col * sliceSize + row * dims[1] + slice;
+                    }
+                    const value = typedData[offset];
+
+                    const pixelIndex = (row * cols + col) * 4;
+                    canvasImageData.data[pixelIndex] = value & 0xFF;
+                    canvasImageData.data[pixelIndex + 1] = value & 0xFF;
+                    canvasImageData.data[pixelIndex + 2] = value & 0xFF;
+                    canvasImageData.data[pixelIndex + 3] = 0xFF;
+                }
+            }
+
+            ctx.putImageData(canvasImageData, 0, 0);
+        }
+
+        function changeView(newView) {
+            currentView = newView;
+
+            if (!window.currentHeader || !window.currentImage) {
+                console.error("NIFTI header or image data is not available.");
+                return;
+            }
+
+            const slider = document.getElementById('myRange');
+            updateSliderRange(window.currentHeader, slider);
+
+            drawCanvas(
+                document.getElementById('myCanvas'),
+                parseInt(slider.value),
+                window.currentHeader,
+                window.currentImage,
+                currentView
+            );
+        }
+
+        function handleFileSelect(evt) {
+            const files = evt.target.files;
+            const reader = new FileReader();
+
+            reader.onloadend = function (evt) {
+                if (evt.target.readyState === FileReader.DONE) {
+                    window.currentImage = evt.target.result;
+                    readNIFTI(files[0].name, evt.target.result);
+                }
+            };
+
+            reader.readAsArrayBuffer(files[0]);
+        }
+    </script>
+
+    <title>NIFTI Viewer</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            background-color: #000069;
+            color: aliceblue;
+        }
+        #select {
+            margin-bottom: 10px;
+        }
+        #viewOptions {
+            margin: 10px 0;
+        }
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+<div id="select">
+    <h3>NIFTI-Viewer</h3>
+    <p>Select a NIFTI file: <input type="file" id="file" name="files" /></p>
+    <div id="viewOptions">
+        <label><input type="radio" name="view" value="axial" checked onchange="changeView(this.value)"> Axial View</label>
+        <label><input type="radio" name="view" value="coronal" onchange="changeView(this.value)"> Coronal View</label>
+        <label><input type="radio" name="view" value="sagittal" onchange="changeView(this.value)"> Sagittal View</label>
+    </div>
+</div>
+<div id="content">
+    <div id="headerInfo"></div>
+    <div id="canvasContainer">
+        <canvas id="myCanvas"></canvas><br/>
+        <input type="range" min="1" max="100" value="50" class="slider" id="myRange">
+    </div>
+</div>
+
+<script>
+    document.getElementById('file').addEventListener('change', handleFileSelect, false);
+</script>
+</body>
+</html>     

@@ -1,0 +1,237 @@
+<!--Coronal View Sagittal View Axial View-->
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <link rel="shortcut icon" href="#">
+
+    <script type="module">
+        import * as nifti from './nifti-reader.js';
+
+        // Check if the nifti module is loaded
+        if (typeof nifti !== "undefined" && nifti !== null) {
+            console.log("nifti-reader.js is loaded correctly.");
+            alert("nifti module loaded successfully.");
+        } else {
+            console.error("nifti-reader.js failed to load.");
+            alert("Failed to load nifti module.");
+        }
+    </script>
+
+    <script type="text/javascript">
+        function readNIFTI(name, data) {
+            const axialCanvas = document.getElementById('axialCanvas');
+            const coronalCanvas = document.getElementById('coronalCanvas');
+            const sagittalCanvas = document.getElementById('sagittalCanvas');
+            const axialSlider = document.getElementById('axialRange');
+            const coronalSlider = document.getElementById('coronalRange');
+            const sagittalSlider = document.getElementById('sagittalRange');
+            let niftiHeader, niftiImage;
+
+            if (nifti.isCompressed(data)) {
+                data = nifti.decompress(data);
+            }
+
+            if (nifti.isNIFTI(data)) {
+                niftiHeader = nifti.readHeader(data);
+                niftiImage = nifti.readImage(niftiHeader, data);
+
+                // Save to global variables for later access
+                window.currentHeader = niftiHeader;
+                window.currentImage = niftiImage;
+            }
+
+            //const headerDisplay = document.getElementById('headerInfo');
+            //headerDisplay.innerText = niftiHeader.toFormattedString();
+
+            updateSliderRange(niftiHeader, axialSlider, 'axial');
+            updateSliderRange(niftiHeader, coronalSlider, 'coronal');
+            updateSliderRange(niftiHeader, sagittalSlider, 'sagittal');
+
+            axialSlider.oninput = function () {
+                drawCanvas(axialCanvas, parseInt(axialSlider.value), niftiHeader, niftiImage, "axial");
+            };
+            coronalSlider.oninput = function () {
+                drawCanvas(coronalCanvas, parseInt(coronalSlider.value), niftiHeader, niftiImage, "coronal");
+            };
+            sagittalSlider.oninput = function () {
+                drawCanvas(sagittalCanvas, parseInt(sagittalSlider.value), niftiHeader, niftiImage, "sagittal");
+            };
+
+            const middleSliceAxial = Math.round(axialSlider.max / 2);
+            const middleSliceCoronal = Math.round(coronalSlider.max / 2);
+            const middleSliceSagittal = Math.round(sagittalSlider.max / 2);
+
+            drawCanvas(axialCanvas, middleSliceAxial, niftiHeader, niftiImage, "axial");
+            drawCanvas(coronalCanvas, middleSliceCoronal, niftiHeader, niftiImage, "coronal");
+            drawCanvas(sagittalCanvas, middleSliceSagittal, niftiHeader, niftiImage, "sagittal");
+        }
+
+        function updateSliderRange(niftiHeader, slider, view) {
+            if (!niftiHeader || !niftiHeader.dims) {
+                console.error("Invalid NIFTI header or dimensions missing.");
+                return;
+            }
+
+            const slices = {
+                axial: niftiHeader.dims[3],
+                sagittal: niftiHeader.dims[1],
+                coronal: niftiHeader.dims[2],
+            };
+
+            slider.max = slices[view] - 1;
+            slider.value = Math.round(slider.max / 2);
+        }
+
+        function drawCanvas(canvas, slice, niftiHeader, niftiImage, view) {
+            const dims = niftiHeader.dims;
+            let cols, rows, sliceOffset, sliceSize;
+            const ctx = canvas.getContext("2d");
+
+            if (view === "axial") {
+                cols = dims[1];
+                rows = dims[2];
+                sliceSize = cols * rows;
+                sliceOffset = sliceSize * slice;
+            } else if (view === "coronal") {
+                cols = dims[1];
+                rows = dims[3];
+                sliceSize = cols * dims[2];
+                sliceOffset = slice * cols;
+            } else if (view === "sagittal") {
+                cols = dims[2];
+                rows = dims[3];
+                sliceSize = dims[1] * cols;
+                sliceOffset = slice;
+            }
+
+            canvas.width = cols;
+            canvas.height = rows;
+            const canvasImageData = ctx.createImageData(canvas.width, canvas.height);
+
+            let typedData;
+            if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_UINT8) {
+                typedData = new Uint8Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_INT16) {
+                typedData = new Int16Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_INT32) {
+                typedData = new Int32Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_FLOAT32) {
+                typedData = new Float32Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_FLOAT64) {
+                typedData = new Float64Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_INT8) {
+                typedData = new Int8Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_UINT16) {
+                typedData = new Uint16Array(niftiImage);
+            } else if (niftiHeader.datatypeCode === nifti.NIFTI1.TYPE_UINT32) {
+                typedData = new Uint32Array(niftiImage);
+            } else {
+                return;
+            }
+
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    let offset;
+                    if (view === "axial") {
+                        offset = sliceOffset + row * cols + col;
+                    } else if (view === "coronal") {
+                        offset = slice * cols + row * sliceSize + col;
+                    } else if (view === "sagittal") {
+                        offset = col * sliceSize + row * dims[1] + slice;
+                    }
+                    const value = typedData[offset];
+
+                    const pixelIndex = (row * cols + col) * 4;
+                    canvasImageData.data[pixelIndex] = value & 0xFF;
+                    canvasImageData.data[pixelIndex + 1] = value & 0xFF;
+                    canvasImageData.data[pixelIndex + 2] = value & 0xFF;
+                    canvasImageData.data[pixelIndex + 3] = 0xFF;
+                }
+            }
+
+            ctx.putImageData(canvasImageData, 0, 0);
+        }
+
+        function handleFileSelect(evt) {
+            const files = evt.target.files;
+            const reader = new FileReader();
+
+            reader.onloadend = function (evt) {
+                if (evt.target.readyState === FileReader.DONE) {
+                    window.currentImage = evt.target.result;
+                    readNIFTI(files[0].name, evt.target.result);
+                }
+            };
+
+            reader.readAsArrayBuffer(files[0]);
+        }
+    </script>
+
+    <title>NIFTI Viewer</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            background-color: #000069;
+            color: aliceblue;
+        }
+        #select {
+            margin-bottom: 10px;
+        }
+        #content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #canvasContainer {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .sliderContainer {
+            margin-top: 10px;
+        }
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+<div id="select">
+    <h3>NIFTI Viewer</h3>
+    <p>Select a NIFTI file: <input type="file" id="file" name="files" /></p>
+</div>
+<div id="content">
+    <div id="headerInfo"></div>
+    <div id="canvasContainer">
+        <div>
+            <canvas id="axialCanvas"></canvas>
+            <div class="sliderContainer">
+                Axial: <input type="range" min="1" max="100" value="50" class="slider" id="axialRange">
+            </div>
+        </div>
+        <div>
+            <canvas id="coronalCanvas"></canvas>
+            <div class="sliderContainer">
+                Coronal: <input type="range" min="1" max="100" value="50" class="slider" id="coronalRange">
+            </div>
+        </div>
+        <div>
+            <canvas id="sagittalCanvas"></canvas>
+            <div class="sliderContainer">
+                Sagittal: <input type="range" min="1" max="100" value="50" class="slider" id="sagittalRange">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('file').addEventListener('change', handleFileSelect, false);
+</script>
+</body>
+</html>
